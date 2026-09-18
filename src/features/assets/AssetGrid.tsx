@@ -1,13 +1,13 @@
-import { useRef, useMemo, useEffect, useState, useLayoutEffect } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import type { Asset } from '@/lib/types';
-import { AssetCard } from './AssetCard';
+import { useRef, useMemo, useEffect, useState, useLayoutEffect } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import type { Asset } from "@/lib/types";
+import { AssetCard } from "./AssetCard";
 
 interface Props {
   assets: Asset[];
   selectedIds: Set<string>;
   activeId: string | null;
-  onToggleSelect: (id: string) => void;
+  onToggleSelect: (id: string, shiftKey: boolean) => void;
   onOpen: (id: string) => void;
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
@@ -30,14 +30,16 @@ export function AssetGrid({
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(1000);
+  
+  // Use window.innerWidth as an immediate fallback instead of hardcoded 1000
+  const [containerWidth, setContainerWidth] = useState(() => 
+    typeof window !== "undefined" ? window.innerWidth - 32 : 1000
+  );
 
-  // Observe container width changes (survives detail panel toggle)
   useLayoutEffect(() => {
     const el = parentRef.current;
     if (!el) return;
 
-    // Set initial width immediately
     setContainerWidth(el.clientWidth);
 
     const ro = new ResizeObserver((entries) => {
@@ -53,9 +55,13 @@ export function AssetGrid({
   }, []);
 
   const columns = useMemo(() => {
-    return Math.max(1, Math.floor((containerWidth - 32 + GAP) / (CARD_MIN_WIDTH + GAP)));
+    return Math.max(
+      1,
+      Math.floor((containerWidth - 32 + GAP) / (CARD_MIN_WIDTH + GAP)),
+    );
   }, [containerWidth]);
 
+  // Flattened chunks mapped strictly by current columns
   const rows = useMemo(() => {
     const result: Asset[][] = [];
     for (let i = 0; i < assets.length; i += columns) {
@@ -69,15 +75,17 @@ export function AssetGrid({
     getScrollElement: () => parentRef.current,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 4,
+    getItemKey: (index) => rows[index]?.[0]?.id ?? index,
   });
 
   const virtualItems = rowVirtualizer.getVirtualItems();
 
-  // Primary trigger: IntersectionObserver on a sentinel placed right at the end of the scroll list
+  // Primary trigger: IntersectionObserver on sentinel
   useEffect(() => {
     const root = parentRef.current;
     const target = sentinelRef.current;
-    if (!root || !target || !hasNextPage || isFetchingNextPage || !onLoadMore) return;
+    if (!root || !target || !hasNextPage || isFetchingNextPage || !onLoadMore)
+      return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -88,9 +96,9 @@ export function AssetGrid({
       },
       {
         root,
-        rootMargin: '400px', // Preload when user is within 400px of bottom
+        rootMargin: "400px",
         threshold: 0,
-      }
+      },
     );
 
     observer.observe(target);
@@ -99,7 +107,13 @@ export function AssetGrid({
 
   // Fallback trigger: On scroll in virtualizer
   useEffect(() => {
-    if (!virtualItems.length || !hasNextPage || isFetchingNextPage || !onLoadMore) return;
+    if (
+      !virtualItems.length ||
+      !hasNextPage ||
+      isFetchingNextPage ||
+      !onLoadMore
+    )
+      return;
     const lastItem = virtualItems[virtualItems.length - 1];
     if (lastItem && lastItem.index >= rows.length - 2) {
       onLoadMore();
@@ -110,7 +124,9 @@ export function AssetGrid({
     return (
       <div className="empty">
         <p>Nothing matches these filters.</p>
-        <p className="muted">Clear the search box or widen the status filter.</p>
+        <p className="muted">
+          Clear the search box or widen the status filter.
+        </p>
       </div>
     );
   }
@@ -121,13 +137,13 @@ export function AssetGrid({
         className="grid-virtual-container"
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
-          position: 'relative',
-          width: '100%',
+          position: "relative",
+          width: "100%",
         }}
       >
         {virtualItems.map((virtualRow) => {
           const rowAssets = rows[virtualRow.index];
-          if (!rowAssets) return null;
+          if (!rowAssets || rowAssets.length === 0) return null;
 
           return (
             <div
@@ -136,15 +152,15 @@ export function AssetGrid({
               ref={rowVirtualizer.measureElement}
               className="grid-row"
               style={{
-                position: 'absolute',
+                position: "absolute",
                 top: 0,
                 left: 0,
-                width: '100%',
+                width: "100%",
                 transform: `translateY(${virtualRow.start}px)`,
-                display: 'grid',
+                display: "grid",
                 gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
                 gap: `${GAP}px`,
-                padding: '0 16px',
+                padding: "0 16px",
               }}
             >
               {rowAssets.map((asset) => (
@@ -162,13 +178,13 @@ export function AssetGrid({
         })}
       </div>
 
-      {/* Sentinel element to continuously trip next-page cursor fetches */}
-      <div ref={sentinelRef} style={{ height: '40px', width: '100%', pointerEvents: 'none' }} />
+      <div
+        ref={sentinelRef}
+        style={{ height: "40px", width: "100%", pointerEvents: "none" }}
+      />
 
       {isFetchingNextPage && (
-        <div className="grid-loading-indicator muted">
-          Loading more assets…
-        </div>
+        <div className="grid-loading-indicator muted">Loading more assets…</div>
       )}
     </div>
   );

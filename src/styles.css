@@ -153,6 +153,7 @@ button:disabled {
   overflow: hidden;
   background: var(--bg);
   cursor: pointer;
+  user-select: none; /* Prevents text drag from blocking Shift+Click */
 }
 .card--selected {
   border-color: var(--accent);

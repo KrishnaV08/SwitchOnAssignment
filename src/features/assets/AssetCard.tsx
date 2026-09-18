@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { thumbnailUrl } from '@/api/client';
-import { formatBytes, formatDate, statusLabel } from '@/lib/format';
-import type { Asset } from '@/lib/types';
+import React, { useState } from "react";
+import { thumbnailUrl } from "@/api/client";
+import { formatBytes, formatDate, statusLabel } from "@/lib/format";
+import type { Asset } from "@/lib/types";
 
 interface AssetCardProps {
   asset: Asset;
   isSelected: boolean;
   isActive: boolean;
-  onToggleSelect: (id: string) => void;
+  onToggleSelect: (id: string, shiftKey: boolean) => void;
   onOpen: (id: string) => void;
 }
 
@@ -20,14 +20,28 @@ export const AssetCard = React.memo(function AssetCard({
 }: AssetCardProps) {
   const [imgFailed, setImgFailed] = useState(!asset.hasThumbnail);
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      onToggleSelect(asset.id, true);
+      return;
+    }
+    onOpen(asset.id);
+  };
+
+  const handleCheckClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    onToggleSelect(asset.id, e.shiftKey);
+  };
+
   return (
     <div
       className={
-        'card' +
-        (isSelected ? ' card--selected' : '') +
-        (isActive ? ' card--active' : '')
+        "card" +
+        (isSelected ? " card--selected" : "") +
+        (isActive ? " card--active" : "")
       }
-      onClick={() => onOpen(asset.id)}
+      onClick={handleCardClick}
       role="article"
       aria-selected={isSelected}
     >
@@ -52,9 +66,12 @@ export const AssetCard = React.memo(function AssetCard({
           {asset.name}
         </p>
         <p className="muted">
-          {asset.kind} · {formatBytes(asset.sizeBytes)} · {formatDate(asset.updatedAt)}
+          {asset.kind} · {formatBytes(asset.sizeBytes)} ·{" "}
+          {formatDate(asset.updatedAt)}
         </p>
-        <span className={`pill pill--${asset.status}`}>{statusLabel(asset.status)}</span>
+        <span className={`pill pill--${asset.status}`}>
+          {statusLabel(asset.status)}
+        </span>
       </div>
 
       <input
@@ -62,8 +79,8 @@ export const AssetCard = React.memo(function AssetCard({
         className="card__check"
         checked={isSelected}
         aria-label={`Select ${asset.name}`}
-        onClick={(e) => e.stopPropagation()}
-        onChange={() => onToggleSelect(asset.id)}
+        onClick={handleCheckClick}
+        onChange={() => {}}
       />
     </div>
   );

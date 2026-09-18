@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AssetDetail } from "@/features/assets/AssetDetail";
 import { AssetGrid } from "@/features/assets/AssetGrid";
 import { useAssets } from "@/features/assets/useAssets";
@@ -15,7 +15,6 @@ const SORTS: Array<{ value: NonNullable<AssetQuery["sort"]>; label: string }> =
   ];
 
 // Read initial state from URL query parameters (Task 1)
-// In src/App.tsx
 function readUrlParams() {
   const params = new URLSearchParams(window.location.search);
   const q = params.get("q") ?? "";
@@ -40,16 +39,17 @@ function readUrlParams() {
 
   return { q, sort, status, kind, tag, activeId };
 }
+
 export function App() {
   const initial = readUrlParams();
 
-  // Controlled search input value (updates on every stroke for immediate input response)
+  // Controlled search input value
   const [searchInput, setSearchInput] = useState(initial.q);
 
   // Debounced search query (sent to network and URL)
   const [debouncedQ, setDebouncedQ] = useState(initial.q);
-  const [kind, setKind] = useState<AssetQuery["kind"]>(initial.kind); // <-- Added
-  const [tag, setTag] = useState<string[]>(initial.tag); // <-- Added
+  const [kind, setKind] = useState<AssetQuery["kind"]>(initial.kind);
+  const [tag, setTag] = useState<string[]>(initial.tag);
 
   // Active filters and sort state
   const [status, setStatus] = useState<AssetStatus[]>(initial.status);
@@ -62,9 +62,7 @@ export function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Debounce timing rationale for SUBMISSION.md:
-  // 300ms accounts for human typing rhythm (~150-200ms between keys) while leaving a safe
-  // buffer so fast typers don't burn through the API's 80 req / 10s rolling rate limit.
+  // Debounce timing: 300ms accounts for human typing rhythm and protects rate limit
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQ(searchInput);
@@ -72,7 +70,7 @@ export function App() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Sync state to the browser URL using replaceState (avoids cluttering back/forward history)
+  // Sync state to the browser URL using replaceState
   useEffect(() => {
     const params = new URLSearchParams();
     if (debouncedQ.trim()) params.set("q", debouncedQ.trim());
@@ -88,7 +86,7 @@ export function App() {
       : window.location.pathname;
 
     window.history.replaceState(null, "", targetUrl);
-  }, [debouncedQ, status, sort, activeId]);
+  }, [debouncedQ, status, sort, activeId, kind, tag]);
 
   // Handle browser back / forward navigation
   useEffect(() => {
@@ -99,7 +97,6 @@ export function App() {
       setStatus(current.status);
       setKind(current.kind);
       setTag(current.tag);
-
       setSort(current.sort);
       setActiveId(current.activeId);
     }
@@ -108,15 +105,23 @@ export function App() {
   }, []);
 
   // Fetch pipeline with cancellation, de-duplication, and cursor reset
-  const { items, total, loading, error, refetch, mutateAssetLocal } = useAssets(
-    {
-      q: debouncedQ,
-      status,
-      kind,
-      tag,
-      sort,
-    },
-  );
+  const {
+    items,
+    total,
+    nextCursor,
+    loading,
+    loadingMore,
+    error,
+    refetch,
+    loadMore,
+    mutateAssetLocal,
+  } = useAssets({
+    q: debouncedQ,
+    status,
+    kind,
+    tag,
+    sort,
+  });
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -130,6 +135,27 @@ export function App() {
   function handleSaved(updatedAsset: Asset) {
     mutateAssetLocal(updatedAsset.id, updatedAsset);
     setNotice(`Saved "${updatedAsset.name}".`);
+  }
+
+  async function handleBulkStatus(newStatus: AssetStatus) {
+    if (selectedIds.size === 0) return;
+
+    const idsToUpdate = Array.from(selectedIds);
+    setNotice(
+      `Updating ${idsToUpdate.length} asset(s) to "${statusLabel(newStatus)}"...`,
+    );
+
+    try {
+      idsToUpdate.forEach((id) => {
+        mutateAssetLocal(id, { status: newStatus });
+      });
+      setSelectedIds(new Set());
+      setNotice(
+        `Updated ${idsToUpdate.length} asset(s) to "${statusLabel(newStatus)}".`,
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Bulk update failed");
+    }
   }
 
   return (
@@ -177,9 +203,25 @@ export function App() {
         </span>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="bulkbar">
+          <span>
+            <strong>{selectedIds.size}</strong> selected
+          </span>
+          <button onClick={() => setSelectedIds(new Set())}>
+            Clear selection
+          </button>
+          <span className="muted">| Set status:</span>
+          {STATUSES.map((s) => (
+            <button key={s} onClick={() => handleBulkStatus(s)}>
+              {statusLabel(s)}
+            </button>
+          ))}
+        </div>
+      )}
+
       {notice && <p className="notice">{notice}</p>}
 
-      {/* Distinction between Error, Empty, and Loading states (Task 1) */}
       {error && !loading && (
         <div
           className="error-banner"
@@ -210,6 +252,9 @@ export function App() {
             activeId={activeId}
             onToggleSelect={toggleSelect}
             onOpen={setActiveId}
+            hasNextPage={Boolean(nextCursor)}
+            isFetchingNextPage={loadingMore}
+            onLoadMore={loadMore}
           />
         )}
 

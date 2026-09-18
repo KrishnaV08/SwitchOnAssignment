@@ -15,7 +15,11 @@
 
 body {
   margin: 0;
-  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font:
+    15px/1.5 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   color: var(--ink);
   background: var(--bg);
 }
@@ -72,6 +76,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden; /* Stop page body from scrolling */
 }
 
 .topbar {
@@ -127,7 +132,8 @@ button:disabled {
 .content {
   display: flex;
   flex: 1;
-  min-height: 0;
+  min-height: 0; /* Crucial for flex children to allow overflow */
+  overflow: hidden;
 }
 
 .grid {
@@ -268,4 +274,47 @@ button:disabled {
     border-left: none;
     border-top: 1px solid var(--line);
   }
+}
+
+.grid-scroller {
+  flex: 1;
+  height: 100%;
+  overflow-y: auto; /* This container must hold the scrollbar */
+  overflow-x: hidden;
+}
+
+.card__thumb-wrapper {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background-color: var(--bg-soft);
+  position: relative;
+  overflow: hidden;
+}
+
+.card__thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--bg-soft);
+}
+
+.card__thumb-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #edeef2;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.grid-loading-indicator {
+  text-align: center;
+  padding: 16px;
 }

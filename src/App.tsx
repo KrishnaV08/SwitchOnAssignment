@@ -2,28 +2,35 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { AssetDetail } from "@/features/assets/AssetDetail";
 import { AssetGrid } from "@/features/assets/AssetGrid";
 import { useAssets } from "@/features/assets/useAssets";
-import { statusLabel } from "@/lib/format";
+import { getHumanErrorMessage, statusLabel } from "@/lib/format";
 import type { Asset, AssetStatus, AssetQuery } from "@/lib/types";
 import { chunkArray, runWithConcurrency } from "@/lib/concurrency";
 import { bulkSetStatus } from "@/api/client";
 import type { BulkResult } from "@/lib/types";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const STATUSES: AssetStatus[] = ["draft", "in_review", "approved", "archived"];
-const SORTS: Array<{ value: NonNullable<AssetQuery["sort"]>; label: string }> =
-  [
-    { value: "updatedAt:desc", label: "Recently updated" },
-    { value: "name:asc", label: "Name A–Z" },
-    { value: "sizeBytes:desc", label: "Largest first" },
-    { value: "createdAt:desc", label: "Newest" },
-  ];
+
+const SORTS: Array<{
+  value: NonNullable<AssetQuery["sort"]>;
+  label: string;
+}> = [
+  { value: "updatedAt:desc", label: "Recently updated" },
+  { value: "name:asc", label: "Name A–Z" },
+  { value: "sizeBytes:desc", label: "Largest first" },
+  { value: "createdAt:desc", label: "Newest" },
+];
 
 function readUrlParams() {
   const params = new URLSearchParams(window.location.search);
+
   const q = params.get("q") ?? "";
+
   const sort =
     (params.get("sort") as NonNullable<AssetQuery["sort"]>) || "updatedAt:desc";
 
   const statusParam = params.get("status");
+
   const status: AssetStatus[] = statusParam
     ? (statusParam
         .split(",")
@@ -31,15 +38,24 @@ function readUrlParams() {
     : [];
 
   const kindParam = params.get("kind");
+
   const kind: NonNullable<AssetQuery["kind"]> = kindParam
     ? (kindParam.split(",").filter(Boolean) as NonNullable<AssetQuery["kind"]>)
     : [];
 
   const tagParam = params.get("tag");
   const tag: string[] = tagParam ? tagParam.split(",").filter(Boolean) : [];
+
   const activeId = params.get("activeId") || null;
 
-  return { q, sort, status, kind, tag, activeId };
+  return {
+    q,
+    sort,
+    status,
+    kind,
+    tag,
+    activeId,
+  };
 }
 
 export function App() {
@@ -47,46 +63,100 @@ export function App() {
 
   const [searchInput, setSearchInput] = useState(initial.q);
   const [debouncedQ, setDebouncedQ] = useState(initial.q);
+
   const [kind, setKind] = useState<AssetQuery["kind"]>(initial.kind);
   const [tag, setTag] = useState<string[]>(initial.tag);
 
   const [status, setStatus] = useState<AssetStatus[]>(initial.status);
+
   const [sort, setSort] = useState<NonNullable<AssetQuery["sort"]>>(
     initial.sort,
   );
+
   const [activeId, setActiveId] = useState<string | null>(initial.activeId);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Recovery & Undo State (Task 3 Checkpoint 4)
+  // Screen reader only announcements.
+  // This intentionally does NOT contain the asset count,
+  // because the count changes frequently and would cause
+  // repeated announcements.
+  const [screenReaderAnnouncement, setScreenReaderAnnouncement] = useState("");
+  const [srAnnouncement, setSrAnnouncement] = useState<string>("");
+  // Recovery & Undo State
   const [retryableFailedIds, setRetryableFailedIds] = useState<string[]>([]);
+
   const [pendingStatus, setPendingStatus] = useState<AssetStatus | null>(null);
+
   const [undoPlan, setUndoPlan] = useState<Map<string, AssetStatus> | null>(
     null,
   );
 
+  // Online / Offline detection
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== "undefined" ? !navigator.onLine : false,
+  );
+
+  // Roving tabindex & focus restoration refs
+  const [focusedIndex, setFocusedIndex] = useState(0);
+
+  const lastActiveIdRef = useRef<string | null>(null);
+
   // Persistent anchor & snapshot refs for multi-step Shift+Click range selections
   const anchorIdRef = useRef<string | null>(null);
+
   const baseSelectionRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQ(searchInput);
     }, 300);
+
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // Announce only intentional notices.
+  // Do not announce item counts here because items.length
+  // changes during filtering/pagination/loading.
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    setScreenReaderAnnouncement(notice);
+  }, [notice]);
+
   useEffect(() => {
     const params = new URLSearchParams();
-    if (debouncedQ.trim()) params.set("q", debouncedQ.trim());
-    if (status.length > 0) params.set("status", status.join(","));
-    if (sort !== "updatedAt:desc") params.set("sort", sort);
-    if (activeId) params.set("activeId", activeId);
-    if (kind && kind.length > 0) params.set("kind", kind.join(","));
-    if (tag && tag.length > 0) params.set("tag", tag.join(","));
+
+    if (debouncedQ.trim()) {
+      params.set("q", debouncedQ.trim());
+    }
+
+    if (status.length > 0) {
+      params.set("status", status.join(","));
+    }
+
+    if (sort !== "updatedAt:desc") {
+      params.set("sort", sort);
+    }
+
+    if (activeId) {
+      params.set("activeId", activeId);
+    }
+
+    if (kind && kind.length > 0) {
+      params.set("kind", kind.join(","));
+    }
+
+    if (tag && tag.length > 0) {
+      params.set("tag", tag.join(","));
+    }
 
     const queryStr = params.toString();
+
     const targetUrl = queryStr
       ? `${window.location.pathname}?${queryStr}`
       : window.location.pathname;
@@ -97,6 +167,7 @@ export function App() {
   useEffect(() => {
     function handlePopState() {
       const current = readUrlParams();
+
       setSearchInput(current.q);
       setDebouncedQ(current.q);
       setStatus(current.status);
@@ -105,8 +176,12 @@ export function App() {
       setSort(current.sort);
       setActiveId(current.activeId);
     }
+
     window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
   }, []);
 
   const {
@@ -127,7 +202,31 @@ export function App() {
     sort,
   });
 
+  // Online / offline event listeners with automatic re-sync
+  useEffect(() => {
+    function handleOnline() {
+      setIsOffline(false);
+
+      setNotice("Internet connection restored. Re-syncing latest assets...");
+
+      refetch();
+    }
+
+    function handleOffline() {
+      setIsOffline(true);
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [refetch]);
+
   const itemsRef = useRef<Asset[]>(items);
+
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
@@ -135,7 +234,8 @@ export function App() {
   const toggleSelect = useCallback((id: string, shiftKey: boolean = false) => {
     setSelectedIds((prev) => {
       const currentItems = itemsRef.current;
-
+      // const targetItem = currentItems.find((a) => a.id === id);
+      const target = currentItems.find((a) => a.id === id);
       if (shiftKey && anchorIdRef.current) {
         const anchorIdx = currentItems.findIndex(
           (a) => a.id === anchorIdRef.current,
@@ -154,82 +254,127 @@ export function App() {
             }
           }
 
+          setSrAnnouncement(`Selected ${next.size} items`);
           return next;
         }
       }
 
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
+      const isNowSelected = !next.has(id);
+
+      if (isNowSelected) {
         next.add(id);
+      } else {
+        next.delete(id);
       }
 
       anchorIdRef.current = id;
       baseSelectionRef.current = new Set(next);
+
+      // Announce the item and new state to assistive tech
+      // Explicit VoiceOver announcement
+      if (target) {
+        setSrAnnouncement(
+          `${target.name}, ${isNowSelected ? "selected" : "unselected"}`,
+        );
+      }
       return next;
     });
   }, []);
-
   const handleClearSelection = useCallback(() => {
     setSelectedIds(new Set());
+
     anchorIdRef.current = null;
     baseSelectionRef.current = new Set();
   }, []);
 
   const handleSelectAllLoaded = useCallback(() => {
     const allIds = new Set(itemsRef.current.map((a) => a.id));
+
     setSelectedIds(allIds);
     baseSelectionRef.current = allIds;
   }, []);
 
   function handleSaved(updatedAsset: Asset) {
     mutateAssetLocal(updatedAsset.id, updatedAsset);
+
     setNotice(`Saved "${updatedAsset.name}".`);
   }
+
+  // Focus-safe open and close handlers for detail panel
+  const handleOpenDetail = useCallback((id: string) => {
+    lastActiveIdRef.current = id;
+    setActiveId(id);
+  }, []);
+
+  const handleCloseDetail = useCallback(() => {
+    const returnTargetId = lastActiveIdRef.current;
+
+    setActiveId(null);
+
+    if (returnTargetId) {
+      setTimeout(() => {
+        const targetCard = document.querySelector<HTMLElement>(
+          `[data-asset-id="${returnTargetId}"]`,
+        );
+
+        targetCard?.focus();
+      }, 16);
+    }
+  }, []);
 
   async function executeBulkUpdate(
     targetIds: string[],
     newStatus: AssetStatus,
   ) {
-    if (targetIds.length === 0) return;
+    if (targetIds.length === 0) {
+      return;
+    }
 
-    // 1. Snapshot previous state for selective rollback and undo
+    if (isOffline) {
+      setNotice("You are offline. Reconnect to apply bulk status changes.");
+
+      return;
+    }
+
     const currentItemsMap = new Map(itemsRef.current.map((a) => [a.id, a]));
+
     const previousStatuses = new Map<string, AssetStatus>();
+
     for (const id of targetIds) {
       const existing = currentItemsMap.get(id);
+
       if (existing) {
         previousStatuses.set(id, existing.status);
       }
     }
 
-    // 2. Apply optimistic update to UI immediately
     targetIds.forEach((id) => {
-      mutateAssetLocal(id, { status: newStatus });
+      mutateAssetLocal(id, {
+        status: newStatus,
+      });
     });
 
     handleClearSelection();
+
     setNotice(
       `Applying "${statusLabel(newStatus)}" to ${targetIds.length} asset(s)...`,
     );
 
-    // 3. Chunk payload into batches of <= 50 IDs
     const BATCH_SIZE = 50;
+
     const batches = chunkArray(targetIds, BATCH_SIZE);
 
-    // 4. Bounded concurrency (max 3 requests parallel)
     const tasks = batches.map((batch) => async () => {
       try {
         return await bulkSetStatus(batch, newStatus);
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : "Network failure";
         return {
           results: batch.map((id) => ({
             id,
             ok: false as const,
             code: "network_error",
-            message: errorMsg,
+            message: getHumanErrorMessage(err),
           })),
           applied: 0,
           failed: batch.length,
@@ -240,23 +385,30 @@ export function App() {
     try {
       const batchResults = await runWithConcurrency(tasks, 3);
 
-      // 5. Aggregate HTTP 207 results
       let totalApplied = 0;
+
       const legalHoldFails: string[] = [];
       const transientFails: string[] = [];
+
       const successfulUndoMap = new Map<string, AssetStatus>();
 
       for (const batchRes of batchResults) {
         for (const res of batchRes.results) {
           if (res.ok) {
             totalApplied++;
+
             const prev = previousStatuses.get(res.id);
-            if (prev) successfulUndoMap.set(res.id, prev);
+
+            if (prev) {
+              successfulUndoMap.set(res.id, prev);
+            }
           } else {
-            // Roll back ONLY this failed asset to its previous status
             const prevStatus = previousStatuses.get(res.id);
+
             if (prevStatus) {
-              mutateAssetLocal(res.id, { status: prevStatus });
+              mutateAssetLocal(res.id, {
+                status: prevStatus,
+              });
             }
 
             if (res.code === "legal_hold") {
@@ -268,38 +420,49 @@ export function App() {
         }
       }
 
-      // Store successful modifications for optional undo
       setUndoPlan(successfulUndoMap.size > 0 ? successfulUndoMap : null);
 
-      // 6. Detailed feedback
       const totalFailed = legalHoldFails.length + transientFails.length;
+
       if (totalFailed === 0) {
         setNotice(
           `Successfully updated all ${totalApplied} asset(s) to "${statusLabel(newStatus)}".`,
         );
+
         setRetryableFailedIds([]);
         setPendingStatus(null);
       } else {
         const messages: string[] = [];
-        if (totalApplied > 0) messages.push(`${totalApplied} succeeded`);
-        if (legalHoldFails.length > 0)
+
+        if (totalApplied > 0) {
+          messages.push(`${totalApplied} succeeded`);
+        }
+
+        if (legalHoldFails.length > 0) {
           messages.push(
             `${legalHoldFails.length} blocked by legal-hold (never retried)`,
           );
-        if (transientFails.length > 0)
+        }
+
+        if (transientFails.length > 0) {
           messages.push(`${transientFails.length} failed transiently`);
+        }
 
         setNotice(
           `Bulk update finished with partial success: ${messages.join(", ")}.`,
         );
+
         setRetryableFailedIds(transientFails);
         setPendingStatus(newStatus);
       }
     } catch (err) {
       previousStatuses.forEach((prev, id) => {
-        mutateAssetLocal(id, { status: prev });
+        mutateAssetLocal(id, {
+          status: prev,
+        });
       });
-      setNotice(err instanceof Error ? err.message : "Bulk update failed");
+
+      setNotice(getHumanErrorMessage(err));
     }
   }
 
@@ -307,18 +470,24 @@ export function App() {
     executeBulkUpdate(Array.from(selectedIds), newStatus);
   }
 
-  // Checkpoint 4: Undo handler
   async function handleUndo() {
-    if (!undoPlan || undoPlan.size === 0) return;
+    if (!undoPlan || undoPlan.size === 0) {
+      return;
+    }
+
     const plan = new Map(undoPlan);
+
     setUndoPlan(null);
+
     setNotice(`Reverting ${plan.size} asset(s)...`);
 
-    // Group assets by target rollback status
     const byStatus = new Map<AssetStatus, string[]>();
+
     plan.forEach((prevStatus, id) => {
       const list = byStatus.get(prevStatus) ?? [];
+
       list.push(id);
+
       byStatus.set(prevStatus, list);
     });
 
@@ -329,17 +498,45 @@ export function App() {
 
   return (
     <div className="app">
+      {/* Screen reader live region.
+          Only intentional notices are announced.
+          Asset counts are NOT placed here because they change
+          frequently during filtering and pagination. */}
+      <div
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          position: "absolute",
+          width: "1px",
+          height: "1px",
+          padding: 0,
+          margin: "-1px",
+          overflow: "hidden",
+          clip: "rect(0, 0, 0, 0)",
+          whiteSpace: "nowrap",
+          border: 0,
+        }}
+      >
+        {screenReaderAnnouncement}
+      </div>
+
       <header className="topbar">
         <h1>MediaVault</h1>
+
         <input
           className="search"
           type="search"
           placeholder="Search assets..."
           value={searchInput}
+          aria-label="Search assets"
           onChange={(e) => setSearchInput(e.target.value)}
         />
+
         <select
           value={sort}
+          aria-label="Sort assets"
           onChange={(e) => setSort(e.target.value as typeof sort)}
         >
           {SORTS.map((option) => (
@@ -350,7 +547,27 @@ export function App() {
         </select>
       </header>
 
-      <div className="filters">
+      {isOffline && (
+        <div
+          role="status"
+          style={{
+            background: "#424242",
+            color: "#fff",
+            padding: "10px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontSize: "14px",
+          }}
+        >
+          <span>
+            ⚠️ <strong>You are offline.</strong> Changes cannot be saved until
+            connectivity is restored.
+          </span>
+        </div>
+      )}
+
+      <div className="filters" role="group" aria-label="Filter by status">
         {STATUSES.map((s) => (
           <label key={s}>
             <input
@@ -362,9 +579,11 @@ export function App() {
                 )
               }
             />
+
             {statusLabel(s)}
           </label>
         ))}
+
         <span className="muted">
           {loading
             ? "Updating..."
@@ -373,17 +592,21 @@ export function App() {
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="bulkbar">
+        <div className="bulkbar" role="toolbar" aria-label="Bulk actions">
           <span>
             <strong>{selectedIds.size}</strong> selected
           </span>
+
           {selectedIds.size < items.length && (
             <button onClick={handleSelectAllLoaded}>
               Select all loaded ({items.length.toLocaleString()})
             </button>
           )}
+
           <button onClick={handleClearSelection}>Clear selection</button>
+
           <span className="muted">| Set status:</span>
+
           {STATUSES.map((s) => (
             <button key={s} onClick={() => handleBulkStatus(s)}>
               {statusLabel(s)}
@@ -403,13 +626,16 @@ export function App() {
           }}
         >
           <span>{notice}</span>
-          {retryableFailedIds.length > 0 && pendingStatus && (
+
+          {retryableFailedIds.length > 0 && pendingStatus && !isOffline && (
             <button
               onClick={() => {
                 const ids = [...retryableFailedIds];
                 const st = pendingStatus;
+
                 setRetryableFailedIds([]);
                 setPendingStatus(null);
+
                 executeBulkUpdate(ids, st);
               }}
               style={{
@@ -424,7 +650,8 @@ export function App() {
               Retry {retryableFailedIds.length} failed
             </button>
           )}
-          {undoPlan && (
+
+          {undoPlan && !isOffline && (
             <button
               onClick={handleUndo}
               style={{
@@ -452,7 +679,7 @@ export function App() {
             margin: "8px 16px",
           }}
         >
-          <strong>Error loading assets:</strong> {error}
+          <strong>Error:</strong> {getHumanErrorMessage(error)}
           <button onClick={() => refetch()} style={{ marginLeft: "12px" }}>
             Try again
           </button>
@@ -460,30 +687,42 @@ export function App() {
       )}
 
       <main className={`content ${loading ? "content-pending" : ""}`}>
-        {!loading && !error && items.length === 0 ? (
-          <div className="empty-state">
-            <h3>Nothing matches these filters.</h3>
-            <p>Clear the search box or widen the status filter.</p>
-          </div>
-        ) : (
-          <AssetGrid
-            assets={items}
-            selectedIds={selectedIds}
-            activeId={activeId}
-            onToggleSelect={toggleSelect}
-            onOpen={setActiveId}
-            hasNextPage={Boolean(nextCursor)}
-            isFetchingNextPage={loadingMore}
-            onLoadMore={loadMore}
-          />
-        )}
+        <ErrorBoundary
+          fallbackTitle="Unable to display the asset gallery."
+          onReset={() => refetch()}
+        >
+          {!loading && !error && items.length === 0 ? (
+            <div className="empty-state">
+              <h3>Nothing matches these filters.</h3>
+              <p>Clear the search box or widen the status filter.</p>
+            </div>
+          ) : (
+            <AssetGrid
+              assets={items}
+              selectedIds={selectedIds}
+              activeId={activeId}
+              onToggleSelect={toggleSelect}
+              onOpen={handleOpenDetail}
+              hasNextPage={Boolean(nextCursor)}
+              isFetchingNextPage={loadingMore}
+              onLoadMore={loadMore}
+              focusedIndex={focusedIndex}
+              setFocusedIndex={setFocusedIndex}
+            />
+          )}
+        </ErrorBoundary>
 
         {activeId && (
-          <AssetDetail
-            id={activeId}
-            onClose={() => setActiveId(null)}
-            onSaved={handleSaved}
-          />
+          <ErrorBoundary
+            fallbackTitle="Failed to load asset details."
+            onReset={handleCloseDetail}
+          >
+            <AssetDetail
+              id={activeId}
+              onClose={handleCloseDetail}
+              onSaved={handleSaved}
+            />
+          </ErrorBoundary>
         )}
       </main>
     </div>

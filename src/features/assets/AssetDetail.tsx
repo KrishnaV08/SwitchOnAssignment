@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react';
-import { getAsset, thumbnailUrl, updateAsset } from '@/api/client';
-import { formatBytes, formatDate, formatDuration, statusLabel } from '@/lib/format';
-import { ApiError, type Asset, type AssetStatus } from '@/lib/types';
+import { useEffect, useState, useRef } from "react";
+import { getAsset, thumbnailUrl, updateAsset } from "@/api/client";
+import {
+  formatBytes,
+  formatDate,
+  formatDuration,
+  statusLabel,
+} from "@/lib/format";
+import { ApiError, type Asset, type AssetStatus } from "@/lib/types";
 
-const STATUSES: AssetStatus[] = ['draft', 'in_review', 'approved', 'archived'];
+const STATUSES: AssetStatus[] = ["draft", "in_review", "approved", "archived"];
 
 interface Props {
   id: string;
@@ -22,13 +27,36 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
 
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Focus the close button when the detail drawer opens
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
+
+  // Close panel on Escape key
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   useEffect(() => {
     setAsset(null);
     setError(null);
     setConflict(null);
     getAsset(id)
       .then(setAsset)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Load failed'));
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "Load failed"),
+      );
   }, [id]);
 
   async function setStatus(status: AssetStatus, targetVersion?: number) {
@@ -53,10 +81,12 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
             serverAsset: latest,
           });
         } catch {
-          setError('Version conflict detected, but failed to fetch latest asset state.');
+          setError(
+            "Version conflict detected, but failed to fetch latest asset state.",
+          );
         }
       } else {
-        setError(err instanceof Error ? err.message : 'Save failed');
+        setError(err instanceof Error ? err.message : "Save failed");
       }
     } finally {
       setSaving(false);
@@ -78,50 +108,71 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
   }
 
   return (
-    <aside className="panel">
+    <aside
+      className="panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="asset-detail-title"
+    >
       <div className="panel__head">
-        <h2>Asset detail</h2>
-        <button onClick={onClose}>Close</button>
+        <h2 id="asset-detail-title">Asset detail</h2>
+        <button
+          ref={closeButtonRef}
+          onClick={onClose}
+          aria-label="Close detail panel"
+        >
+          Close
+        </button>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
 
       {conflict && (
         <div
           role="alert"
           style={{
-            margin: '12px 16px',
-            padding: '12px',
-            background: '#fff3e0',
-            border: '1px solid #ffb74d',
-            borderRadius: '6px',
-            fontSize: '13px',
+            margin: "12px 16px",
+            padding: "12px",
+            background: "#fff3e0",
+            border: "1px solid #ffb74d",
+            borderRadius: "6px",
+            fontSize: "13px",
           }}
         >
-          <strong style={{ color: '#e65100', display: 'block', marginBottom: '6px' }}>
+          <strong
+            style={{
+              color: "#e65100",
+              display: "block",
+              marginBottom: "6px",
+            }}
+          >
             Version Conflict (409)
           </strong>
-          <p style={{ margin: '0 0 10px 0', lineHeight: 1.4 }}>
-            Another reviewer or process updated this asset. Server is at{' '}
+          <p style={{ margin: "0 0 10px 0", lineHeight: 1.4 }}>
+            Another reviewer or process updated this asset. Server is at{" "}
             <strong>v{conflict.serverAsset.version}</strong> (
             <span className={`pill pill--${conflict.serverAsset.status}`}>
               {statusLabel(conflict.serverAsset.status)}
             </span>
-            ), while your edit attempted{' '}
+            ), while your edit attempted{" "}
             <span className={`pill pill--${conflict.attemptedStatus}`}>
               {statusLabel(conflict.attemptedStatus)}
             </span>
             .
           </p>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: "flex", gap: "8px" }}>
             <button
               onClick={handleAcceptServer}
               style={{
-                padding: '4px 10px',
-                background: '#fff',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                cursor: 'pointer',
+                padding: "4px 10px",
+                background: "#fff",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                cursor: "pointer",
               }}
             >
               Accept server version
@@ -129,12 +180,12 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
             <button
               onClick={handleForceApply}
               style={{
-                padding: '4px 10px',
-                background: '#e65100',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
+                padding: "4px 10px",
+                background: "#e65100",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
               }}
             >
               Overwrite
@@ -143,11 +194,20 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
         </div>
       )}
 
-      {!asset && !error && <p className="muted">Loading…</p>}
+      {!asset && !error && (
+        <p className="muted" role="status">
+          Loading…
+        </p>
+      )}
 
       {asset && (
         <div className="panel__body">
-          <img className="panel__thumb" src={thumbnailUrl(asset.id)} alt="" />
+          <img
+            className="panel__thumb"
+            src={thumbnailUrl(asset.id)}
+            alt=""
+            aria-hidden="true"
+          />
           <h3>{asset.name}</h3>
           <dl className="facts">
             <dt>Id</dt>
@@ -179,19 +239,26 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
           </dl>
 
           {asset.tags.length > 0 && (
-            <ul className="tags">
+            <ul className="tags" aria-label="Tags">
               {asset.tags.map((tag) => (
                 <li key={tag}>{tag}</li>
               ))}
             </ul>
           )}
 
-          <p className="muted">Status</p>
-          <div className="row">
+          <p className="muted" id="status-group-label">
+            Status
+          </p>
+          <div
+            className="row"
+            role="group"
+            aria-labelledby="status-group-label"
+          >
             {STATUSES.map((status) => (
               <button
                 key={status}
                 disabled={saving || status === asset.status}
+                aria-pressed={status === asset.status}
                 onClick={() => setStatus(status)}
               >
                 {statusLabel(status)}

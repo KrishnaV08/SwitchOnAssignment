@@ -79,6 +79,10 @@ async function executeFetch<T>(
     if (signal?.aborted) {
       throw createAbortError();
     }
+    // Task 4: Immediate offline check to prevent hammering dead sockets
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new ApiError(0, 'You appear to be offline. Check your internet connection.', 'network_offline');
+    }
 
     try {
       const res = await fetch(path, {

@@ -17,6 +17,7 @@
 | 13 | Silent unhandled crashes blank the entire DOM tree when component rendering errors occur | `ErrorBoundary.tsx` / `App.tsx` | Fixed |
 | 14 | Going offline causes continuous socket hammering and leaks raw status codes like `429: Too many requests` | `client.ts` / `format.ts` / `App.tsx` | Fixed |
 | 15 | Opening/closing detail panel loses keyboard focus to body, and missing ARIA semantics spam VoiceOver buffers | `AssetGrid.tsx` / `AssetDetail.tsx` / `AssetCard.tsx` | Fixed |
+| 16 | Missing or failed thumbnail requests in detail panel show broken image icon frames with layout jump | `AssetDetail.tsx` | Fixed |
 
 ---
 
@@ -113,6 +114,12 @@
 
 ---
 
+## Interface design and craft
+
+We designed the interface around reviewer ergonomics for prolonged sorting sessions, optimizing for visual calm, immediate state legibility, and high information density without clutter. The design relies on a token-based slate system where all surfaces, borders, and typography scale predictably across both light and dark themes (`data-theme="dark"`). Status is expressed as a clear lifecycle progression (`draft` → `in_review` → `approved` → `archived`) using a multi-channel visual pattern: each state pairs distinct chromatic tokens with unique iconography glyphs (`•`, `◷`, `✓`, `⛚`) and explicit text labels, ensuring immediate readability for reviewers with color-vision deficiencies. Interactive states are deliberately elevated: bulk actions surface in a floating capsule anchored to the viewport, missing image files display geometric placeholders rather than broken frames[cite: 2], and all body and metadata text strictly exceed the WCAG AA 4.5:1 contrast threshold while remaining resilient down to narrow viewports.
+
+---
+
 ## Performance
 
 Fill in real measurements, not estimates. Say which machine and browser.
@@ -131,7 +138,7 @@ Fill in real measurements, not estimates. Say which machine and browser.
 | Retried requests on 400/409/422 deterministic errors | 3 redundant retries per call | 0 retries (immediate structural failure) | Chrome DevTools Network tab count |
 | Requests fired while offline | Multiple retrying network sockets | 0 network requests dispatched | Chrome DevTools Network tab under Offline simulation |
 | Requests fired while typing a 6-character query | 6 requests | 1–2 requests | Chrome DevTools Network tab |
-| Production bundle, gzipped | 48.0 kB | 59.8 kB (+11.8 kB) | `npm run build` output stats |
+| Production bundle, gzipped | 48.0 kB | 60.1 kB (+12.1 kB) | `npm run build` output stats |
 
 What was the actual bottleneck, and how did you find it?
 - Five major culprits choked performance, accessibility, and stability:
@@ -140,7 +147,7 @@ What was the actual bottleneck, and how did you find it?
   3. Bulk payload limits & unbounded socket bursts: Dispatching bulk updates for large selections (>50 items) triggered hard 400 rejections from the API. Conversely, unmetered parallel chunking risked socket starvation. Slicing items into bounded chunks of 50 handled by a 3-worker concurrency queue kept traffic bounded and predictable.
   4. Range selection pivot mutation: Updating the selection anchor on every Shift+Click caused multi-step range selections to collapse or fail across virtualization row boundaries. Moving to a persistent anchor reference (`anchorIdRef`) and deriving ranges against `itemsRef.current` reduced execution overhead to under 2.5ms while preserving predictable multi-step selections.
   5. Keyboard tab ring explosion & VoiceOver speech buffer exhaustion: Exposing checkboxes and cards natively generated thousands of tab stops. Furthermore, using `role="grid"` caused VoiceOver to buffer entire 7-column rows, swallowing `aria-selected` mutations on Spacebar presses. Moving to a roving `tabIndex={0}`, switching to `role="listbox"`/`role="option"`, and adding an assertive live region resolved speech latency and tab order bloat.
-- On bundle size: The build grew by ~11.8 kB gzipped over the 48 kB baseline. We accepted this trade-off deliberately: `@tanstack/react-virtual` delivers solid sub-16ms frame times, handles multi-column responsive chunking, keeps scroll anchoring stable when toggling the side inspection panel, and the error boundaries, formatters, and ARIA live regions ensure rock-solid accessibility and resilience.
+- On bundle size: The build grew by ~12.1 kB gzipped over the 48 kB baseline. We accepted this trade-off deliberately: `@tanstack/react-virtual` delivers solid sub-16ms frame times, handles multi-column responsive chunking, keeps scroll anchoring stable when toggling the side inspection panel, and the error boundaries, formatters, and ARIA live regions ensure rock-solid accessibility and resilience.
 
 ---
 

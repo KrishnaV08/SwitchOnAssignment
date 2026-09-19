@@ -59,7 +59,7 @@ interface RequestOptions extends RequestInit {
   maxRetries?: number;
 }
 
-// Map key -> { promise, subscribers: Set<AbortController> }
+
 interface InFlightEntry<T> {
   promise: Promise<T>;
   subscribers: number;

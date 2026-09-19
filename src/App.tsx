@@ -23,14 +23,11 @@ const SORTS: Array<{
 
 function readUrlParams() {
   const params = new URLSearchParams(window.location.search);
-
   const q = params.get("q") ?? "";
-
   const sort =
     (params.get("sort") as NonNullable<AssetQuery["sort"]>) || "updatedAt:desc";
 
   const statusParam = params.get("status");
-
   const status: AssetStatus[] = statusParam
     ? (statusParam
         .split(",")
@@ -38,61 +35,56 @@ function readUrlParams() {
     : [];
 
   const kindParam = params.get("kind");
-
   const kind: NonNullable<AssetQuery["kind"]> = kindParam
     ? (kindParam.split(",").filter(Boolean) as NonNullable<AssetQuery["kind"]>)
     : [];
 
   const tagParam = params.get("tag");
   const tag: string[] = tagParam ? tagParam.split(",").filter(Boolean) : [];
-
   const activeId = params.get("activeId") || null;
 
-  return {
-    q,
-    sort,
-    status,
-    kind,
-    tag,
-    activeId,
-  };
+  return { q, sort, status, kind, tag, activeId };
 }
 
 export function App() {
   const initial = readUrlParams();
+
+  // Dark mode theme state
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("mv-theme") as "light" | "dark" | null;
+      if (stored === "light" || stored === "dark") return stored;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+    }
+    return "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("mv-theme", theme);
+  }, [theme]);
 
   const [searchInput, setSearchInput] = useState(initial.q);
   const [debouncedQ, setDebouncedQ] = useState(initial.q);
 
   const [kind, setKind] = useState<AssetQuery["kind"]>(initial.kind);
   const [tag, setTag] = useState<string[]>(initial.tag);
-
   const [status, setStatus] = useState<AssetStatus[]>(initial.status);
-
-  const [sort, setSort] = useState<NonNullable<AssetQuery["sort"]>>(
-    initial.sort,
-  );
-
+  const [sort, setSort] = useState<NonNullable<AssetQuery["sort"]>>(initial.sort);
   const [activeId, setActiveId] = useState<string | null>(initial.activeId);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Screen reader only announcements.
-  // This intentionally does NOT contain the asset count,
-  // because the count changes frequently and would cause
-  // repeated announcements.
-  const [screenReaderAnnouncement, setScreenReaderAnnouncement] = useState("");
+  // Screen reader announcements: dedicated assertive buffer for instant Space selection feedback
   const [srAnnouncement, setSrAnnouncement] = useState<string>("");
+
   // Recovery & Undo State
   const [retryableFailedIds, setRetryableFailedIds] = useState<string[]>([]);
-
   const [pendingStatus, setPendingStatus] = useState<AssetStatus | null>(null);
-
-  const [undoPlan, setUndoPlan] = useState<Map<string, AssetStatus> | null>(
-    null,
-  );
+  const [undoPlan, setUndoPlan] = useState<Map<string, AssetStatus> | null>(null);
 
   // Online / Offline detection
   const [isOffline, setIsOffline] = useState(
@@ -101,12 +93,10 @@ export function App() {
 
   // Roving tabindex & focus restoration refs
   const [focusedIndex, setFocusedIndex] = useState(0);
-
   const lastActiveIdRef = useRef<string | null>(null);
 
   // Persistent anchor & snapshot refs for multi-step Shift+Click range selections
   const anchorIdRef = useRef<string | null>(null);
-
   const baseSelectionRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -117,46 +107,17 @@ export function App() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Announce only intentional notices.
-  // Do not announce item counts here because items.length
-  // changes during filtering/pagination/loading.
-  useEffect(() => {
-    if (!notice) {
-      return;
-    }
-
-    setScreenReaderAnnouncement(notice);
-  }, [notice]);
-
   useEffect(() => {
     const params = new URLSearchParams();
 
-    if (debouncedQ.trim()) {
-      params.set("q", debouncedQ.trim());
-    }
-
-    if (status.length > 0) {
-      params.set("status", status.join(","));
-    }
-
-    if (sort !== "updatedAt:desc") {
-      params.set("sort", sort);
-    }
-
-    if (activeId) {
-      params.set("activeId", activeId);
-    }
-
-    if (kind && kind.length > 0) {
-      params.set("kind", kind.join(","));
-    }
-
-    if (tag && tag.length > 0) {
-      params.set("tag", tag.join(","));
-    }
+    if (debouncedQ.trim()) params.set("q", debouncedQ.trim());
+    if (status.length > 0) params.set("status", status.join(","));
+    if (sort !== "updatedAt:desc") params.set("sort", sort);
+    if (activeId) params.set("activeId", activeId);
+    if (kind && kind.length > 0) params.set("kind", kind.join(","));
+    if (tag && tag.length > 0) params.set("tag", tag.join(","));
 
     const queryStr = params.toString();
-
     const targetUrl = queryStr
       ? `${window.location.pathname}?${queryStr}`
       : window.location.pathname;
@@ -167,7 +128,6 @@ export function App() {
   useEffect(() => {
     function handlePopState() {
       const current = readUrlParams();
-
       setSearchInput(current.q);
       setDebouncedQ(current.q);
       setStatus(current.status);
@@ -178,10 +138,7 @@ export function App() {
     }
 
     window.addEventListener("popstate", handlePopState);
-
-    return () => {
-      window.removeEventListener("popstate", handlePopState);
-    };
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   const {
@@ -206,9 +163,7 @@ export function App() {
   useEffect(() => {
     function handleOnline() {
       setIsOffline(false);
-
       setNotice("Internet connection restored. Re-syncing latest assets...");
-
       refetch();
     }
 
@@ -226,7 +181,6 @@ export function App() {
   }, [refetch]);
 
   const itemsRef = useRef<Asset[]>(items);
-
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
@@ -234,8 +188,8 @@ export function App() {
   const toggleSelect = useCallback((id: string, shiftKey: boolean = false) => {
     setSelectedIds((prev) => {
       const currentItems = itemsRef.current;
-      // const targetItem = currentItems.find((a) => a.id === id);
       const target = currentItems.find((a) => a.id === id);
+
       if (shiftKey && anchorIdRef.current) {
         const anchorIdx = currentItems.findIndex(
           (a) => a.id === anchorIdRef.current,
@@ -254,7 +208,7 @@ export function App() {
             }
           }
 
-          setSrAnnouncement(`Selected ${next.size} items`);
+          setSrAnnouncement(`Selected ${next.size} assets`);
           return next;
         }
       }
@@ -271,8 +225,6 @@ export function App() {
       anchorIdRef.current = id;
       baseSelectionRef.current = new Set(next);
 
-      // Announce the item and new state to assistive tech
-      // Explicit VoiceOver announcement
       if (target) {
         setSrAnnouncement(
           `${target.name}, ${isNowSelected ? "selected" : "unselected"}`,
@@ -281,27 +233,24 @@ export function App() {
       return next;
     });
   }, []);
+
   const handleClearSelection = useCallback(() => {
     setSelectedIds(new Set());
-
     anchorIdRef.current = null;
     baseSelectionRef.current = new Set();
   }, []);
 
   const handleSelectAllLoaded = useCallback(() => {
     const allIds = new Set(itemsRef.current.map((a) => a.id));
-
     setSelectedIds(allIds);
     baseSelectionRef.current = allIds;
   }, []);
 
   function handleSaved(updatedAsset: Asset) {
     mutateAssetLocal(updatedAsset.id, updatedAsset);
-
     setNotice(`Saved "${updatedAsset.name}".`);
   }
 
-  // Focus-safe open and close handlers for detail panel
   const handleOpenDetail = useCallback((id: string) => {
     lastActiveIdRef.current = id;
     setActiveId(id);
@@ -309,7 +258,6 @@ export function App() {
 
   const handleCloseDetail = useCallback(() => {
     const returnTargetId = lastActiveIdRef.current;
-
     setActiveId(null);
 
     if (returnTargetId) {
@@ -317,7 +265,6 @@ export function App() {
         const targetCard = document.querySelector<HTMLElement>(
           `[data-asset-id="${returnTargetId}"]`,
         );
-
         targetCard?.focus();
       }, 16);
     }
@@ -327,42 +274,33 @@ export function App() {
     targetIds: string[],
     newStatus: AssetStatus,
   ) {
-    if (targetIds.length === 0) {
-      return;
-    }
+    if (targetIds.length === 0) return;
 
     if (isOffline) {
       setNotice("You are offline. Reconnect to apply bulk status changes.");
-
       return;
     }
 
     const currentItemsMap = new Map(itemsRef.current.map((a) => [a.id, a]));
-
     const previousStatuses = new Map<string, AssetStatus>();
 
     for (const id of targetIds) {
       const existing = currentItemsMap.get(id);
-
       if (existing) {
         previousStatuses.set(id, existing.status);
       }
     }
 
     targetIds.forEach((id) => {
-      mutateAssetLocal(id, {
-        status: newStatus,
-      });
+      mutateAssetLocal(id, { status: newStatus });
     });
 
     handleClearSelection();
-
     setNotice(
       `Applying "${statusLabel(newStatus)}" to ${targetIds.length} asset(s)...`,
     );
 
     const BATCH_SIZE = 50;
-
     const batches = chunkArray(targetIds, BATCH_SIZE);
 
     const tasks = batches.map((batch) => async () => {
@@ -384,31 +322,21 @@ export function App() {
 
     try {
       const batchResults = await runWithConcurrency(tasks, 3);
-
       let totalApplied = 0;
-
       const legalHoldFails: string[] = [];
       const transientFails: string[] = [];
-
       const successfulUndoMap = new Map<string, AssetStatus>();
 
       for (const batchRes of batchResults) {
         for (const res of batchRes.results) {
           if (res.ok) {
             totalApplied++;
-
             const prev = previousStatuses.get(res.id);
-
-            if (prev) {
-              successfulUndoMap.set(res.id, prev);
-            }
+            if (prev) successfulUndoMap.set(res.id, prev);
           } else {
             const prevStatus = previousStatuses.get(res.id);
-
             if (prevStatus) {
-              mutateAssetLocal(res.id, {
-                status: prevStatus,
-              });
+              mutateAssetLocal(res.id, { status: prevStatus });
             }
 
             if (res.code === "legal_hold") {
@@ -423,45 +351,32 @@ export function App() {
       setUndoPlan(successfulUndoMap.size > 0 ? successfulUndoMap : null);
 
       const totalFailed = legalHoldFails.length + transientFails.length;
-
       if (totalFailed === 0) {
         setNotice(
           `Successfully updated all ${totalApplied} asset(s) to "${statusLabel(newStatus)}".`,
         );
-
         setRetryableFailedIds([]);
         setPendingStatus(null);
       } else {
         const messages: string[] = [];
-
-        if (totalApplied > 0) {
-          messages.push(`${totalApplied} succeeded`);
-        }
-
-        if (legalHoldFails.length > 0) {
+        if (totalApplied > 0) messages.push(`${totalApplied} succeeded`);
+        if (legalHoldFails.length > 0)
           messages.push(
             `${legalHoldFails.length} blocked by legal-hold (never retried)`,
           );
-        }
-
-        if (transientFails.length > 0) {
+        if (transientFails.length > 0)
           messages.push(`${transientFails.length} failed transiently`);
-        }
 
         setNotice(
           `Bulk update finished with partial success: ${messages.join(", ")}.`,
         );
-
         setRetryableFailedIds(transientFails);
         setPendingStatus(newStatus);
       }
     } catch (err) {
       previousStatuses.forEach((prev, id) => {
-        mutateAssetLocal(id, {
-          status: prev,
-        });
+        mutateAssetLocal(id, { status: prev });
       });
-
       setNotice(getHumanErrorMessage(err));
     }
   }
@@ -471,23 +386,15 @@ export function App() {
   }
 
   async function handleUndo() {
-    if (!undoPlan || undoPlan.size === 0) {
-      return;
-    }
-
+    if (!undoPlan || undoPlan.size === 0) return;
     const plan = new Map(undoPlan);
-
     setUndoPlan(null);
-
     setNotice(`Reverting ${plan.size} asset(s)...`);
 
     const byStatus = new Map<AssetStatus, string[]>();
-
     plan.forEach((prevStatus, id) => {
       const list = byStatus.get(prevStatus) ?? [];
-
       list.push(id);
-
       byStatus.set(prevStatus, list);
     });
 
@@ -498,54 +405,150 @@ export function App() {
 
   return (
     <div className="app">
-      {/* Screen reader live region.
-          Only intentional notices are announced.
-          Asset counts are NOT placed here because they change
-          frequently during filtering and pagination. */}
+      {/* Immediate interaction live region (Spacebar selection) */}
       <div
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
         className="sr-only"
+      >
+        {srAnnouncement}
+      </div>
+
+      {/* Polite live region for debounced count announcements and bulk messages */}
+      <div
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        style={{
-          position: "absolute",
-          width: "1px",
-          height: "1px",
-          padding: 0,
-          margin: "-1px",
-          overflow: "hidden",
-          clip: "rect(0, 0, 0, 0)",
-          whiteSpace: "nowrap",
-          border: 0,
-        }}
+        className="sr-only"
       >
-        {screenReaderAnnouncement}
+        {notice || `${items.length} assets displayed of ${total}`}
       </div>
 
+      {/* Top Workspace Header */}
       <header className="topbar">
-        <h1>MediaVault</h1>
+        <div className="brand">
+          <div className="brand__logo" aria-hidden="true">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+          </div>
+          <span className="brand__title">MediaVault</span>
+        </div>
 
-        <input
-          className="search"
-          type="search"
-          placeholder="Search assets..."
-          value={searchInput}
-          aria-label="Search assets"
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
+        <div className="search-wrap">
+          <svg
+            className="search-icon"
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            className="search"
+            type="search"
+            placeholder="Search assets (name, tag, owner)..."
+            value={searchInput}
+            aria-label="Search assets"
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </div>
 
-        <select
-          value={sort}
-          aria-label="Sort assets"
-          onChange={(e) => setSort(e.target.value as typeof sort)}
-        >
-          {SORTS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <div className="topbar-actions">
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            style={{
+              height: "32px",
+              padding: "0 10px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "12px",
+              marginRight: "12px",
+              cursor: "pointer",
+              borderRadius: "6px",
+              border: "1px solid var(--bg-muted)",
+              background: "var(--bg-surface)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            {theme === "light" ? "🌙 Dark Mode" : "☀️ Light Mode"}
+          </button>
+
+          <label className="sort-label">
+            <span className="muted">Sort:</span>
+            <select
+              className="select-input"
+              value={sort}
+              aria-label="Sort assets"
+              onChange={(e) => setSort(e.target.value as typeof sort)}
+            >
+              {SORTS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </header>
+
+      {/* Segmented Filter Bar */}
+      <div className="filters-strip">
+        <div className="filters-group" role="group" aria-label="Filter by status">
+          <span className="filters-heading">Status:</span>
+          {STATUSES.map((s) => {
+            const isChecked = status.includes(s);
+            return (
+              <button
+                type="button"
+                key={s}
+                className={`filter-chip ${isChecked ? "filter-chip--active" : ""} filter-chip--${s}`}
+                aria-pressed={isChecked}
+                onClick={() =>
+                  setStatus((prev) =>
+                    isChecked ? prev.filter((x) => x !== s) : [...prev, s],
+                  )
+                }
+              >
+                <span className="filter-chip__indicator" aria-hidden="true" />
+                <span>{statusLabel(s)}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="filters-summary">
+          <span className="results-count">
+            {loading ? (
+              <span className="spinner-inline">Updating...</span>
+            ) : (
+              <>
+                <strong>{items.length.toLocaleString()}</strong> of{" "}
+                {total.toLocaleString()} assets
+              </>
+            )}
+          </span>
+        </div>
+      </div>
 
       {isOffline && (
         <div
@@ -557,61 +560,13 @@ export function App() {
             display: "flex",
             alignItems: "center",
             gap: "8px",
-            fontSize: "14px",
+            fontSize: "13.5px",
           }}
         >
           <span>
             ⚠️ <strong>You are offline.</strong> Changes cannot be saved until
             connectivity is restored.
           </span>
-        </div>
-      )}
-
-      <div className="filters" role="group" aria-label="Filter by status">
-        {STATUSES.map((s) => (
-          <label key={s}>
-            <input
-              type="checkbox"
-              checked={status.includes(s)}
-              onChange={(e) =>
-                setStatus((prev) =>
-                  e.target.checked ? [...prev, s] : prev.filter((x) => x !== s),
-                )
-              }
-            />
-
-            {statusLabel(s)}
-          </label>
-        ))}
-
-        <span className="muted">
-          {loading
-            ? "Updating..."
-            : `${items.length} of ${total.toLocaleString()} shown`}
-        </span>
-      </div>
-
-      {selectedIds.size > 0 && (
-        <div className="bulkbar" role="toolbar" aria-label="Bulk actions">
-          <span>
-            <strong>{selectedIds.size}</strong> selected
-          </span>
-
-          {selectedIds.size < items.length && (
-            <button onClick={handleSelectAllLoaded}>
-              Select all loaded ({items.length.toLocaleString()})
-            </button>
-          )}
-
-          <button onClick={handleClearSelection}>Clear selection</button>
-
-          <span className="muted">| Set status:</span>
-
-          {STATUSES.map((s) => (
-            <button key={s} onClick={() => handleBulkStatus(s)}>
-              {statusLabel(s)}
-            </button>
-          ))}
         </div>
       )}
 
@@ -632,10 +587,8 @@ export function App() {
               onClick={() => {
                 const ids = [...retryableFailedIds];
                 const st = pendingStatus;
-
                 setRetryableFailedIds([]);
                 setPendingStatus(null);
-
                 executeBulkUpdate(ids, st);
               }}
               style={{
@@ -670,19 +623,48 @@ export function App() {
       )}
 
       {error && !loading && (
-        <div
-          className="error-banner"
-          style={{
-            padding: "12px",
-            background: "#ffebee",
-            color: "#c62828",
-            margin: "8px 16px",
-          }}
-        >
+        <div className="error-banner">
           <strong>Error:</strong> {getHumanErrorMessage(error)}
           <button onClick={() => refetch()} style={{ marginLeft: "12px" }}>
             Try again
           </button>
+        </div>
+      )}
+
+      {/* Floating High-Contrast Bulk Bar */}
+      {selectedIds.size > 0 && (
+        <div className="bulkbar-floating" role="toolbar" aria-label="Bulk actions">
+          <div className="bulkbar-count">
+            <span className="bulkbar-badge">{selectedIds.size}</span>
+            <span>selected</span>
+          </div>
+
+          <div className="bulkbar-divider" />
+
+          {selectedIds.size < items.length && (
+            <button className="btn-secondary" onClick={handleSelectAllLoaded}>
+              Select all loaded ({items.length.toLocaleString()})
+            </button>
+          )}
+
+          <button className="btn-secondary" onClick={handleClearSelection}>
+            Clear
+          </button>
+
+          <div className="bulkbar-divider" />
+
+          <div className="bulkbar-status-actions">
+            <span className="bulkbar-action-label">Set status:</span>
+            {STATUSES.map((s) => (
+              <button
+                key={s}
+                className={`btn-status-action btn-status--${s}`}
+                onClick={() => handleBulkStatus(s)}
+              >
+                {statusLabel(s)}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

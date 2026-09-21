@@ -104,9 +104,14 @@ export function useAssets({ q, status, kind, tag, sort, limit = 24 }: UseAssetsO
   }, [nextCursor, loading, loadingMore, q, statusKey, kindKey, tagKey, sort, limit]);
 
   const mutateAssetLocal = useCallback((id: string, patch: Partial<Asset>) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
-    );
+    setItems((prev) => {
+      const idx = prev.findIndex((item) => item.id === id);
+      if (idx === -1) return prev;
+
+      const next = [...prev];
+      next[idx] = { ...prev[idx], ...patch } as Asset;
+      return next;
+    });
   }, []);
 
   const refetch = useCallback(() => {

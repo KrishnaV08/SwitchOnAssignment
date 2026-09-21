@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { AssetDetail } from "@/features/assets/AssetDetail";
 import { AssetGrid } from "@/features/assets/AssetGrid";
 import { useAssets } from "@/features/assets/useAssets";
-import { getHumanErrorMessage, statusLabel } from "@/lib/format";
+import { formatBytes, getHumanErrorMessage, statusLabel } from "@/lib/format";
 import type { Asset, AssetStatus, AssetQuery } from "@/lib/types";
 import { chunkArray, runWithConcurrency } from "@/lib/concurrency";
 import { bulkSetStatus } from "@/api/client";
@@ -20,6 +20,15 @@ const SORTS: Array<{
   { value: "sizeBytes:desc", label: "Largest first" },
   { value: "createdAt:desc", label: "Newest" },
 ];
+
+interface LibraryStats {
+  totalCount?: number;
+  total?: number;
+  count?: number;
+  totalSizeBytes?: number;
+  totalBytes?: number;
+  sizeBytes?: number;
+}
 
 function readUrlParams() {
   const params = new URLSearchParams(window.location.search);
@@ -66,6 +75,28 @@ export function App() {
     localStorage.setItem("mv-theme", theme);
   }, [theme]);
 
+  // Non-blocking /api/stats state
+  const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetch("/api/stats")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: LibraryStats | null) => {
+        if (isMounted && data) {
+          setLibraryStats(data);
+        }
+      })
+      .catch(() => {
+        // Non-blocking: fail silently without degrading core workflow
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const [searchInput, setSearchInput] = useState(initial.q);
   const [debouncedQ, setDebouncedQ] = useState(initial.q);
 
@@ -98,6 +129,17 @@ export function App() {
   // Persistent anchor & snapshot refs for multi-step Shift+Click range selections
   const anchorIdRef = useRef<string | null>(null);
   const baseSelectionRef = useRef<Set<string>>(new Set());
+
+  // Stable references for SSE guards to avoid reconnection thrashing & stale closures
+  const activeIdRef = useRef<string | null>(activeId);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
+  const selectedIdsRef = useRef<Set<string>>(selectedIds);
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -184,6 +226,52 @@ export function App() {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  // Live Updates Stream (GET /api/events)
+  // Kept stable without tearing down on selection or drawer toggle
+  useEffect(() => {
+    if (typeof window === "undefined" || isOffline) return;
+
+    let eventSource: EventSource | null = null;
+
+    try {
+      eventSource = new EventSource("/api/events");
+
+      const handleAssetUpdated = (event: MessageEvent) => {
+        try {
+          const raw = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+          const updatedAsset: Asset = raw?.asset ?? raw;
+
+          if (!updatedAsset || !updatedAsset.id) return;
+
+          // Guard 1: Do not overwrite the active selection in bulk action buffer
+          if (selectedIdsRef.current.has(updatedAsset.id)) {
+            return;
+          }
+
+          // In-place mutation: preserves list length, item keys, and virtual scroll coordinates
+          mutateAssetLocal(updatedAsset.id, updatedAsset);
+        } catch {
+          // Silently ignore non-JSON frames
+        }
+      };
+
+      eventSource.addEventListener("asset.updated", handleAssetUpdated);
+      eventSource.addEventListener("message", handleAssetUpdated);
+
+      eventSource.onerror = () => {
+        // Automatically attempts reconnection
+      };
+    } catch {
+      // Gracefully handle unsupported environments
+    }
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [isOffline, mutateAssetLocal]);
 
   const toggleSelect = useCallback((id: string, shiftKey: boolean = false) => {
     setSelectedIds((prev) => {
@@ -469,6 +557,50 @@ export function App() {
         </div>
 
         <div className="topbar-actions">
+          {libraryStats && (
+            <div
+              className="topbar-stats"
+              aria-label="Library stats"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "12px",
+                color: "var(--text-tertiary)",
+                marginRight: "14px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span>Library:</span>
+              <strong style={{ color: "var(--text-secondary)" }}>
+                {Number(
+                  libraryStats.totalCount ??
+                    libraryStats.total ??
+                    libraryStats.count ??
+                    0
+                ).toLocaleString()}
+              </strong>
+              {Boolean(
+                libraryStats.totalSizeBytes ||
+                  libraryStats.totalBytes ||
+                  libraryStats.sizeBytes
+              ) && (
+                <span>
+                  (
+                  {formatBytes(
+                    Number(
+                      libraryStats.totalSizeBytes ??
+                        libraryStats.totalBytes ??
+                        libraryStats.sizeBytes ??
+                        0
+                    )
+                  )}
+                  )
+                </span>
+              )}
+            </div>
+          )}
+
           <button
             type="button"
             className="theme-toggle-btn"

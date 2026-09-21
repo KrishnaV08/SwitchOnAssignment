@@ -1,3 +1,11 @@
+# MediaVault Submission
+
+- **Video Walkthrough Link:** https://drive.google.com/drive/folders/1kZIyLvOqcHuOgfjZGWSNEydZNG-QcrxJ?usp=sharing 
+- **Public Git Repository:** https://github.com/KrishnaV08/SwitchOnAssignment
+- **Live Deployment Link:** https://switchonassignment.onrender.com/
+
+---
+
 ## Baseline defects found
 
 | # | Defect | Where | Fixed / left / out of scope |
@@ -116,7 +124,7 @@
 
 ## Interface design and craft
 
-We designed the interface around reviewer ergonomics for prolonged sorting sessions, optimizing for visual calm, immediate state legibility, and high information density without clutter. The design relies on a token-based slate system where all surfaces, borders, and typography scale predictably across both light and dark themes (`data-theme="dark"`). Status is expressed as a clear lifecycle progression (`draft` → `in_review` → `approved` → `archived`) using a multi-channel visual pattern: each state pairs distinct chromatic tokens with unique iconography glyphs (`•`, `◷`, `✓`, `⛚`) and explicit text labels, ensuring immediate readability for reviewers with color-vision deficiencies. Interactive states are deliberately elevated: bulk actions surface in a floating capsule anchored to the viewport, missing image files display geometric placeholders rather than broken frames[cite: 2], and all body and metadata text strictly exceed the WCAG AA 4.5:1 contrast threshold while remaining resilient down to narrow viewports.
+We designed the interface around reviewer ergonomics for prolonged sorting sessions, optimizing for visual calm, immediate state legibility, and high information density without clutter. The design relies on a token-based slate system where all surfaces, borders, and typography scale predictably across both light and dark themes (`data-theme="dark"`). Status is expressed as a clear lifecycle progression (`draft` → `in_review` → `approved` → `archived`) using a multi-channel visual pattern: each state pairs distinct chromatic tokens with unique iconography glyphs (`•`, `◷`, `✓`, `⛚`) and explicit text labels, ensuring immediate readability for reviewers with color-vision deficiencies. Interactive states are deliberately elevated: bulk actions surface in a floating capsule anchored to the viewport, missing image files display geometric placeholders rather than broken frames, and all body and metadata text strictly exceed the WCAG AA 4.5:1 contrast threshold while remaining resilient down to narrow viewports.
 
 ---
 
